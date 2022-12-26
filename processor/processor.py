@@ -17,6 +17,7 @@ from torchlight import DictAction
 from torchlight import import_class
 
 from .io import IO
+from pathlib import Path
 
 class Processor(IO):
     """
@@ -32,6 +33,15 @@ class Processor(IO):
         self.gpu()
         self.load_data()
         self.load_optimizer()
+
+        # Creates the folders to store tests results
+        self.result_dir = Path(self.arg.work_dir)
+        self.figures_dir = self.result_dir / 'figures'
+        self.tables_dir = self.result_dir / 'tables'
+        self.misc_dir = self.result_dir / 'misc'
+        self.figures_dir.mkdir(parents=True, exist_ok=True)
+        self.tables_dir.mkdir(parents=True, exist_ok=True)
+        self.misc_dir.mkdir(parents=True, exist_ok=True)
 
     def init_environment(self):
 

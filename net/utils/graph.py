@@ -29,14 +29,29 @@ class Graph():
                  dilation=1):
         self.max_hop = max_hop
         self.dilation = dilation
+        self.layout = layout
 
-        self.get_edge(layout)
+        self.get_edge(self.layout)
         self.hop_dis = get_hop_distance(
             self.num_node, self.edge, max_hop=max_hop)
         self.get_adjacency(strategy)
 
     def __str__(self):
         return self.A
+
+    def get_tree_edges(self):
+
+        # Remove self loops
+        edges = np.array(self.edge)
+        edges = edges[edges[:, 0] != edges[:, 1]]
+        edges = np.roll(edges, shift=1, axis=1)
+        if self.layout == 'ntu-rgb+d':
+            edges[0] = np.array([0, 1])
+            edges[1] = np.array([1, 20])
+        else:
+            raise ValueError("This Layout do not exist or has not been implemented.")
+
+        return edges
 
     def get_edge(self, layout):
         if layout == 'openpose':
