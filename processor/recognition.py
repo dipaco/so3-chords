@@ -153,7 +153,7 @@ class REC_Processor(Processor):
             self.lr = self.arg.base_lr
 
     def show_topk(self, k):
-        ds_mode = 'no_aug'
+        ds_mode = self.arg.test_feeder_args['aug_mod']
         rank = self.result.argsort()
         hit_top_k = [l in rank[i, -k:] for i, l in enumerate(self.label)]
         accuracy = sum(hit_top_k) * 1.0 / len(hit_top_k)
@@ -162,7 +162,7 @@ class REC_Processor(Processor):
 
     def show_confusion_matrix(self):
 
-        ds_mode = 'no_aug'
+        ds_mode = self.arg.test_feeder_args['aug_mod']
         probs = np.exp(self.result) / np.exp(self.result).sum(axis=-1, keepdims=True)
         n_classes = probs.shape[-1]
         conf_matrix = []
@@ -173,7 +173,7 @@ class REC_Processor(Processor):
         plt.imshow(conf_matrix, vmin=0.0, vmax=1.0, interpolation=None, cmap='coolwarm')
         plt.colorbar()
 
-        plt.savefig(self.figures_dir / 'cm.pdf', bbox_inches="tight") #'/home/diegopc/projects/st-gcn/cm.pdf')
+        plt.savefig(self.figures_dir / f'{ds_mode}_cm.pdf', bbox_inches="tight")
 
         n_rows = n_classes // 10
         n_cols = 10
@@ -202,7 +202,7 @@ class REC_Processor(Processor):
         #fig.tight_layout(pad=5.0)
 
         #plt.colorbar()
-        plt.savefig(self.figures_dir / 'cm_diag.pdf', bbox_inches="tight") #'/home/diegopc/projects/st-gcn/cm_diag.pdf')
+        plt.savefig(self.figures_dir / f'{ds_mode}_cm_diag.pdf', bbox_inches="tight")
 
         self.dump_variables(
             self.tables_dir / f'{ds_mode}_results.txt',

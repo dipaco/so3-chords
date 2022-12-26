@@ -198,3 +198,18 @@ def calculate_recall_precision(label, score):
         recall.append(true_p * 1.0 / (true_p + false_n))
 
     return precision, recall
+
+
+def get_x_rot(theta=None):
+    theta = 2 * np.pi * np.random.rand() if theta is None else theta
+    return np.array([[1, 0, 0], [0, np.cos(theta), -np.sin(theta)], [0, np.sin(theta), np.cos(theta)]])
+
+
+def get_y_rot(theta=None):
+    theta = 2 * np.pi * np.random.rand() if theta is None else theta
+    return np.array([[np.cos(theta), 0, np.sin(theta)], [0, 1, 0], [-np.sin(theta), 0, np.cos(theta)]])
+
+
+def get_z_rot(theta=None):
+    theta = 2 * np.pi * np.random.rand() if theta is None else theta
+    return np.array([[np.cos(theta), -np.sin(theta), 0], [np.sin(theta), np.cos(theta), 0], [0, 0, 1]])

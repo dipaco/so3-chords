@@ -30,6 +30,8 @@ class Feeder(torch.utils.data.Dataset):
         debug: If true, only use the first 100 samples
     """
 
+    AUG_MODS = ['azimuthal', 'so3', 'limbs_scale', 'no_aug']
+
     def __init__(self,
                  data_path,
                  label_path,
@@ -37,13 +39,15 @@ class Feeder(torch.utils.data.Dataset):
                  random_move=False,
                  window_size=-1,
                  debug=False,
-                 mmap=True):
+                 mmap=True,
+                 aug_mod='no_aug'):
         self.debug = debug
         self.data_path = data_path
         self.label_path = label_path
         self.random_choose = random_choose
         self.random_move = random_move
         self.window_size = window_size
+        self.aug_mod = aug_mod
 
         self.load_data(mmap)
 
@@ -82,5 +86,20 @@ class Feeder(torch.utils.data.Dataset):
             data_numpy = tools.auto_pading(data_numpy, self.window_size)
         if self.random_move:
             data_numpy = tools.random_move(data_numpy)
+
+        # Apply augmentation if any
+        if self.aug_mod == 'azimuthal': # In the NTU dataset the y-axis points up
+            # Rotates all the points in the kinematic tree around the y-axis with a random rotation
+            data_numpy = (data_numpy.T @ tools.get_y_rot()).T
+        elif self.aug_mod == 'so3':
+            # Rotates all the points in the kinematic tree with a random so3 rotation
+            rot = tools.get_x_rot() @ tools.get_y_rot() @  tools.get_z_rot()
+            data_numpy = (data_numpy.T @ rot).T
+        elif self.aug_mod == 'limbs_scale':
+            pass
+        elif self.aug_mod == 'no_aug':
+            pass
+        else:
+            raise ValueError(f'Augmentation mode "{self.aug_mod}" is not valid. Try a value in {self.AUG_MODS}.')
 
         return data_numpy, label
