@@ -18,69 +18,7 @@ from torchlight import DictAction
 from torchlight import import_class
 
 from .processor import Processor
-
-ntu_class_names = [
-    "A1. drink water",
-    "A2. eat meal/snack",
-    "A3. brushing teeth",
-    "A4. brushing hair",
-    "A5. drop",
-    "A6. pickup",
-    "A7. throw",
-    "A8. sitting down",
-    "A9. standing up (from sitting position)",
-    "A10. clapping",
-    "A11. reading",
-    "A12. writing",
-    "A13. tear up paper",
-    "A14. wear jacket",
-    "A15. take off jacket",
-    "A16. wear a shoe",
-    "A17. take off a shoe",
-    "A18. wear on glasses",
-    "A19. take off glasses",
-    "A20. put on a hat/cap",
-    "A21. take off a hat/cap",
-    "A22. cheer up",
-    "A23. hand waving",
-    "A24. kicking something",
-    "A25. reach into pocket",
-    "A26. hopping (one foot jumping)",
-    "A27. jump up",
-    "A28. make a phone call/answer phone",
-    "A29. playing with phone/tablet",
-    "A30. typing on a keyboard",
-    "A31. pointing to something with finger",
-    "A32. taking a selfie",
-    "A33. check time (from watch)",
-    "A34. rub two hands together",
-    "A35. nod head/bow",
-    "A36. shake head",
-    "A37. wipe face",
-    "A38. salute",
-    "A39. put the palms together",
-    "A40. cross hands in front (say stop)",
-    "A41. sneeze/cough",
-    "A42. staggering",
-    "A43. falling",
-    "A44. touch head (headache)",
-    "A45. touch chest (stomachache/heart pain)",
-    "A46. touch back (backache)",
-    "A47. touch neck (neckache)",
-    "A48. nausea or vomiting condition",
-    "A49. use a fan (with hand or paper)/feeling warm",
-    "A50. punching/slapping other person",
-    "A51. kicking other person",
-    "A52. pushing other person",
-    "A53. pat on back of other person",
-    "A54. point finger at the other person",
-    "A55. hugging other person",
-    "A56. giving something to other person",
-    "A57. touch other person's pocket",
-    "A58. handshaking",
-    "A59. walking towards each other",
-    "A60. walking apart from each other",
-]
+from tools import NTU_CLASS_NAMES
 
 def process_class_names(class_names):
     out_class_names = []
@@ -165,15 +103,25 @@ class REC_Processor(Processor):
         ds_mode = self.arg.test_feeder_args['aug_mod']
         probs = np.exp(self.result) / np.exp(self.result).sum(axis=-1, keepdims=True)
         n_classes = probs.shape[-1]
-        conf_matrix = []
-        for i in range(n_classes):
-            conf_matrix.append(probs[self.label == i].mean(axis=0))
-        conf_matrix = np.stack(conf_matrix)
 
+        # Computes the confusion matrix containing average predicted probability per class given the gt class?
+        conf_matrix = np.stack([probs[self.label == i].mean(axis=0) for i in range(n_classes)])
+
+        # Computes the probability similarity matrix given the gt class
+        probs_dist = (probs[np.arange(probs.shape[0]), self.label][:, None] - probs)
+        conf_matrix_dist = np.stack([probs_dist[self.label == i].mean(axis=0) for i in range(n_classes)])
+
+        fig = plt.figure()
         plt.imshow(conf_matrix, vmin=0.0, vmax=1.0, interpolation=None, cmap='coolwarm')
         plt.colorbar()
-
         plt.savefig(self.figures_dir / f'{ds_mode}_cm.pdf', bbox_inches="tight")
+        plt.close(fig)
+
+        plt.figure()
+        plt.imshow(conf_matrix_dist, vmin=0.0, vmax=1.0, interpolation=None, cmap='coolwarm')
+        plt.colorbar()
+        plt.savefig(self.figures_dir / f'{ds_mode}_cm_dist.pdf', bbox_inches="tight")
+        plt.close(fig)
 
         n_rows = n_classes // 10
         n_cols = 10
@@ -196,7 +144,7 @@ class REC_Processor(Processor):
                 ax.text(0, j, f'{diag_conf_matrix[i, j]:.3f}', ha="center", va="center", color=color)
 
             ax.tick_params(axis='both', which='minor', labelsize=6)
-            plt.yticks(np.arange(n_cols), process_class_names(ntu_class_names[i*n_cols:(i+1)*n_cols]), rotation=0)
+            plt.yticks(np.arange(n_cols), process_class_names(NTU_CLASS_NAMES[i*n_cols:(i+1)*n_cols]), rotation=0)
             plt.xticks([0.5], [''])
             ax.xaxis.tick_top()
         #fig.tight_layout(pad=5.0)
