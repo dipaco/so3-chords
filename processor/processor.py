@@ -15,6 +15,7 @@ import torchlight
 from torchlight import str2bool
 from torchlight import DictAction
 from torchlight import import_class
+from tensorboardX import SummaryWriter
 
 from .io import IO
 from pathlib import Path
@@ -39,9 +40,15 @@ class Processor(IO):
         self.figures_dir = self.result_dir / 'figures'
         self.tables_dir = self.result_dir / 'tables'
         self.misc_dir = self.result_dir / 'misc'
+        self.tensorboard_dir = self.result_dir / 'tensorboard'
         self.figures_dir.mkdir(parents=True, exist_ok=True)
         self.tables_dir.mkdir(parents=True, exist_ok=True)
         self.misc_dir.mkdir(parents=True, exist_ok=True)
+        self.tensorboard_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize the Tensorboard writer
+        # create a summary writer with automatically generated folder name.
+        self.tb_writer = SummaryWriter(logdir=self.tensorboard_dir)
 
     def init_environment(self):
 

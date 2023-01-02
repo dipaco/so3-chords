@@ -197,7 +197,11 @@ class REC_Processor(Processor):
             self.show_iter_info()
             self.meta_info['iter'] += 1
 
-        self.epoch_info['mean_loss']= np.mean(loss_value)
+        # add logs in tensor board
+        self.tb_writer.add_scalar('train/loss', np.mean(loss_value), self.meta_info['iter'])
+        self.tb_writer.add_scalar('train/lr', self.lr, self.meta_info['iter'])
+
+        self.epoch_info['mean_loss'] = np.mean(loss_value)
         self.show_epoch_info()
         self.io.print_timer()
 
@@ -231,6 +235,9 @@ class REC_Processor(Processor):
             self.label = np.concatenate(label_frag)
             self.epoch_info['mean_loss']= np.mean(loss_value)
             self.show_epoch_info()
+
+            # show tensorboard data
+            self.tb_writer.add_scalar('test/loss', np.mean(loss_value), self.meta_info['iter'])
 
             # show confusion matrix
             self.show_confusion_matrix()
