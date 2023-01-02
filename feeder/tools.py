@@ -1,5 +1,6 @@
 import numpy as np
 import random
+import networkx as nx
 
 
 def downsample(data_numpy, step, random_sample=True):
@@ -213,3 +214,158 @@ def get_y_rot(theta=None):
 def get_z_rot(theta=None):
     theta = 2 * np.pi * np.random.rand() if theta is None else theta
     return np.array([[np.cos(theta), -np.sin(theta), 0], [np.sin(theta), np.cos(theta), 0], [0, 0, 1]])
+
+
+def compute_so3_chains(joints, edges, selected_joint_pairs, kinematic_tree=None):
+
+    if len(joints.shape) < 4:
+        joints = joints[None]
+
+    if kinematic_tree is None:
+        kinematic_tree = nx.Graph()
+        kinematic_tree.add_edges_from(edges)
+
+    # TODO: fix this for when we use 3D keypoints
+    #kp_mod = np.concatenate([seq_mod[..., :2], np.zeros_like(seq_mod[..., :2][..., :1])], axis=-1)
+    #kp_par = np.concatenate([seq_par[..., :2], np.zeros_like(seq_par[..., :2][..., :1])], axis=-1)
+
+    # Compute the rotation matrices for each segment in the tree
+    R_mod = kinematic_tree_3d(joints, edges)
+
+    # Computes the pose energy along each pair of nodes in the tree
+
+    # find out the path between the root node '0' and <n_idx> node, along with all the rotation
+    # matrices in the path
+    #distances_mod = get_pose_energy(all_paths_from_root, kinematic_tree, R_mod, edges=edges, mode='pairs')  # [:, :, 1:] # Ignores the root node
+    distances = get_pose_energy(kinematic_tree, R_mod, edges=edges, pairs=selected_joint_pairs)
+
+    return distances
+
+
+def kinematic_tree_3d(kp, edges):
+    eps = 1e-10
+
+    bs, num_frames, n_kp, _ = kp.shape
+    #n_segs = edges.shape[0]
+    #segments = kp[:, :, edges[:, 1]] - kp[:, :, edges[:, 0]]
+
+    #base_segment = np.tile(np.array([1.0, 0.0, 0.0])[None, None, None], reps=[bs, num_frames, 1, 1])
+    #segments = np.concatenate([base_segment, segments], axis=-2)
+    #segments /= np.linalg.norm(segments, axis=-1, keepdims=True)# + eps    # normalize the segments
+
+    #left_seg = np.tile(aa[None, None, None], reps=[1, 50, 13, 1])
+    #right_seg = np.tile(aa[None, None, None], reps=[1, 50, 13, 1])
+
+    aux = edges[:, None, 0] == edges[None, :, 1]
+    parent_edges = np.stack([edges[aux.argmax(axis=-1), 0], edges[:, 0]]).T # Assumes a tree (only one parent)
+
+    valid_segs = np.any(aux, axis=-1)
+    #valid_segments = segments[:, :, valid_segs, :]
+    filtered_edges = edges[valid_segs]
+    filtered_parent_edges = parent_edges[valid_segs]
+
+    left_seg = kp[:, :, filtered_parent_edges[:, 1]] - kp[:, :, filtered_parent_edges[:, 0]]
+
+    left_seg_mag = np.linalg.norm(left_seg, axis=-1, keepdims=True)
+    assert (left_seg_mag == 0.0).sum() == 0, "The length of the Kinematic tree's edges cannot be zero"
+
+    # Fixes the singularities when the left and right segments are co-linear
+    left_seg += np.random.normal(loc=0.0, scale=eps, size=left_seg.shape)   # to avoid co-linear segments
+    left_seg_mag = np.linalg.norm(left_seg, axis=-1, keepdims=True)
+    left_seg /= left_seg_mag
+
+    right_seg = kp[:, :, filtered_edges[:, 1]] - kp[:, :, filtered_edges[:, 0]]
+    right_seg_mag = np.linalg.norm(right_seg, axis=-1, keepdims=True)
+    assert (right_seg_mag == 0.0).sum() == 0, "The length of the Kinematic tree's edges cannot be zero"
+    right_seg /= right_seg_mag
+
+    # compute the rotation matrix bt. segments
+    c = (left_seg * right_seg).sum(axis=-1, keepdims=True)[..., None]
+
+    v = np.cross(left_seg, right_seg)
+    s = np.linalg.norm(v, axis=-1, keepdims=True)[..., None]
+
+    I = np.tile(np.eye(3)[None, None, None, ...], reps=[bs, num_frames, filtered_edges.shape[0], 1, 1])
+    S = get_skew_matrix(v)
+
+    # Computes the rotation matrix of each segment relative ot its parent
+    R = I + S + S @ S * (1 - c) / (s**2)
+
+    R_all_edges = np.tile(np.eye(3)[None, None, None, ...], reps=[bs, num_frames, edges.shape[0], 1, 1])
+    #nx.set_edge_attributes(kg, {(i, j): R[:, :, n, ...] for n, (i, j) in enumerate(edges.T)})
+
+    # Assign the appropriate rotation metric to each edge. For all edges with out a parent, the rotation matrix remains
+    # the identity matrix. NOTE: This is a general approach to this results, but it should be only one edge without α
+    # parent in the kinematic tree
+    R_all_edges[:, :, valid_segs, ...] = R
+
+    if np.isnan(R_all_edges).sum() > 0:
+        import pdb
+        pdb.set_trace()
+
+        from actim.utils.visualization import show_kinematic_tree_2d
+        a = 5
+
+    return R_all_edges
+
+
+def get_skew_matrix(v):
+
+    M = np.zeros(v.shape + (3,))
+    M[..., 0, 1] = -v[..., 2]
+    M[..., 0, 2] =  v[..., 1]
+    M[..., 1, 0] =  v[..., 2]
+    M[..., 1, 2] = -v[..., 0]
+    M[..., 2, 0] = -v[..., 1]
+    M[..., 2, 1] =  v[..., 0]
+    return M
+
+
+def get_v_from_skew_matrix(M):
+
+    v = np.zeros(M.shape[:-1])
+    v[..., 0] = M[..., 2, 1]
+    v[..., 1] = M[..., 0, 2]
+    v[..., 2] = M[..., 1, 0]
+
+    return v
+
+
+def get_pose_path(kinematic_tree, R, edges, pairs):
+
+    #import pdb
+    #pdb.set_trace()
+
+    bs, num_frames, _, _, _ = R.shape
+    n_pairs = pairs.shape[0]
+
+    composed_R_left = np.tile(np.eye(3)[None, None, None, ...], reps=[bs, num_frames, n_pairs, 1, 1])
+    composed_R_right = np.tile(np.eye(3)[None, None, None, ...], reps=[bs, num_frames, n_pairs, 1, 1])
+
+    for n_idx, pair in enumerate(pairs):
+
+        path_0 = nx.shortest_path(kinematic_tree, 0, pair[0])
+        path_1 = nx.shortest_path(kinematic_tree, 0, pair[1])
+
+        path_edges_0 = np.stack([path_0[:-1], path_0[1:]])
+        edges_idx_0 = np.where(np.all((edges.T[:, None, :] == path_edges_0[:, :, None]), axis=0))[1]
+        n_segs_0 = edges_idx_0.shape[0]
+        path_R_0 = R[:, :, edges_idx_0, ...]
+
+        # Chain-multiply all the rotations matrices in the path
+        for i in range(n_segs_0):
+            composed_R_left[:, :, n_idx] = path_R_0[:, :, i, ...] @ composed_R_left[:, :, n_idx]
+
+        path_edges_1 = np.stack([path_1[:-1], path_1[1:]])
+        edges_idx_1 = np.where(np.all((edges.T[:, None, :] == path_edges_1[:, :, None]), axis=0))[1]
+        n_segs_1 = edges_idx_1.shape[0]
+        path_R_1 = R[:, :, edges_idx_1, ...]
+
+        # Chain-multiply all the rotations matrices in the path
+        for i in range(n_segs_1):
+            composed_R_right[:, :, n_idx] = path_R_1[:, :, i, ...] @ composed_R_right[:, :, n_idx]
+
+    pair_rot = composed_R_left.transpose(0, 1, 2, 4, 3) @ composed_R_right
+    #pose_energy = log_map(composed_R_left.transpose(0, 1, 2, 4, 3) @ composed_R_right)
+
+    return pair_rot
