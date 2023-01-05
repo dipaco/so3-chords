@@ -177,7 +177,9 @@ class Feeder(torch.utils.data.Dataset):
         if self.feat_mode == 'so3_chains':
             data_numpy = self._compute_so3_chain(data_numpy)
             C1, C2, T, V, M = data_numpy.shape
-            data_numpy = data_numpy.reshape(C1 * C2, T, V, M)
+
+            # Only the first two columns of the rotation matrix
+            data_numpy = data_numpy[:, :2].reshape(-1, T, V, M)
         elif self.feat_mode == 'xyz':
             pass
         else:
