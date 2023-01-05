@@ -43,6 +43,7 @@ class Feeder(torch.utils.data.Dataset):
                  window_size=-1,
                  debug=False,
                  mmap=True,
+                 training=True,
                  aug_mod='no_aug',
                  feat_mode='xyz',
                  graph_args={'layout': 'ntu-rgb+d', 'strategy': 'spatial'}
@@ -55,6 +56,7 @@ class Feeder(torch.utils.data.Dataset):
         self.window_size = window_size
         self.aug_mod = aug_mod
         self.feat_mode = feat_mode
+        self.is_training = training
 
         # load graph
         self.graph = Graph(**graph_args)
@@ -82,26 +84,49 @@ class Feeder(torch.utils.data.Dataset):
             self.data = self.data[0:100]
             self.sample_name = self.sample_name[0:100]
 
+        # Generates random angles to apply to the examples, if augmentation is required
+        # Note that when testing the seed is feed to guarantee the same data in each test.
+        if not self.is_training:
+            np.random.seed(1256)
+        self.random_angles = 2 * np.pi * np.random.rand(len(self.label), 3)
+        self.random_scales = (0.7 * np.random.rand() + 0.5) * np.random.rand(len(self.label), 1)
+        np.random.seed()    # Restart, the seed to get real random numbers
+
         self.N, self.C, self.T, self.V, self.M = self.data.shape
 
     def __len__(self):
         return len(self.label)
 
-    def _augment_example(self, data):
+    def _augment_example(self, data, data_idx):
+
+        data_aux = data.reshape(3, -1)
+        valid_elements = ~(data_aux.reshape(3, -1) == 0.0).all(axis=0)
+        scene_center = data_aux[:, valid_elements].mean(axis=-1, keepdims=True)
+
+        # Translate the data to the estimated scene center
+        data_aux[:, valid_elements] -= scene_center
         # Apply augmentation if any
         if self.aug_mod == 'azimuthal':  # In the NTU dataset the y-axis points up
             # Rotates all the points in the kinematic tree around the y-axis with a random rotation
-            data = (data.T @ tools.get_y_rot()).T
+            data_aux = tools.get_y_rot(theta=self.random_angles[data_idx, 0]) @ data_aux
         elif self.aug_mod == 'so3':
             # Rotates all the points in the kinematic tree with a random so3 rotation
-            rot = tools.get_x_rot() @ tools.get_y_rot() @ tools.get_z_rot()
-            data = (data.T @ rot).T
+            rot_x = tools.get_x_rot(theta=self.random_angles[data_idx, 0])
+            rot_y = tools.get_y_rot(theta=self.random_angles[data_idx, 1])
+            rot_z = tools.get_z_rot(theta=self.random_angles[data_idx, 2])
+            data_aux = rot_x @ rot_y @ rot_z @ data_aux
         elif self.aug_mod == 'limbs_scale':
-            pass
+            data_aux *= self.random_scales[data_idx, 0]
         elif self.aug_mod == 'no_aug':
             pass
         else:
             raise ValueError(f'Augmentation mode "{self.aug_mod}" is not valid. Try a value in {self.AUG_MODS}.')
+
+        # Translate the data back to the original coordinate system
+        data_aux[:, valid_elements] += scene_center
+
+        # Back to the original data shape
+        data = data_aux.reshape(data.shape)
 
         return data
 
@@ -146,7 +171,7 @@ class Feeder(torch.utils.data.Dataset):
             data_numpy = tools.random_move(data_numpy)
 
         # Applies augmentations to the xyz coordinates, if any
-        data_numpy = self._augment_example(data_numpy)
+        data_numpy = self._augment_example(data_numpy, index)
 
         # Computes the feature mode
         if self.feat_mode == 'so3_chains':

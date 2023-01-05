@@ -267,4 +267,7 @@ class REC_Processor(Processor):
         parser.add_argument('--weight_decay', type=float, default=0.0001, help='weight decay for optimizer')
         # endregion yapf: enable
 
+        parser.add_argument('--aug_mod', default='no_aug', help='Dataset augmentation mode. Apply transformtions to the xyz joint coordinates.', choices=['no_aug', 'azimuthal', 'so3'])
+        parser.add_argument('--feat_mode', default='feat_mode', help='Type of features computed from the xyz joint coordinates.', choices=['xyz', 'so3_chains'])
+
         return parser

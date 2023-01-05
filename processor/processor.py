@@ -68,7 +68,7 @@ class Processor(IO):
         self.data_loader = dict()
         if self.arg.phase == 'train':
             self.data_loader['train'] = torch.utils.data.DataLoader(
-                dataset=Feeder(**self.arg.train_feeder_args),
+                dataset=Feeder(training=True, **self.arg.train_feeder_args),
                 batch_size=self.arg.batch_size,
                 shuffle=True,
                 num_workers=self.arg.num_worker * torchlight.ngpu(
@@ -76,7 +76,7 @@ class Processor(IO):
                 drop_last=True)
         if self.arg.test_feeder_args:
             self.data_loader['test'] = torch.utils.data.DataLoader(
-                dataset=Feeder(**self.arg.test_feeder_args),
+                dataset=Feeder(training=False, **self.arg.test_feeder_args),
                 batch_size=self.arg.test_batch_size,
                 shuffle=False,
                 num_workers=self.arg.num_worker * torchlight.ngpu(
@@ -181,7 +181,7 @@ class Processor(IO):
         parser.add_argument('--use_gpu', type=str2bool, default=True, help='use GPUs or not')
         parser.add_argument('--device', type=int, default=0, nargs='+', help='the indexes of GPUs for training or testing')
 
-        # visulize and debug
+        # visualize and debug
         parser.add_argument('--log_interval', type=int, default=100, help='the interval for printing messages (#iteration)')
         parser.add_argument('--save_interval', type=int, default=10, help='the interval for storing models (#iteration)')
         parser.add_argument('--eval_interval', type=int, default=5, help='the interval for evaluating models (#iteration)')
