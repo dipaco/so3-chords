@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import random
 import pickle
+import scipy
 
 # torch
 import torch
@@ -33,7 +34,7 @@ class Feeder(torch.utils.data.Dataset):
     """
 
     AUG_MODS = ['azimuthal', 'so3', 'limbs_scale', 'no_aug']
-    FEAT_MODS = ['xyz', 'so3_chains']
+    FEAT_MODS = ['xyz', 'so3_chains', 'so3_single_rot', 'so3_dist']
 
     def __init__(self,
                  data_path,
@@ -130,7 +131,7 @@ class Feeder(torch.utils.data.Dataset):
 
         return data
 
-    def _compute_so3_chain(self, data):
+    def _compute_so3_feat(self, data, mode='so3_chains', return_logmap=False):
 
         C, T, V, M = data.shape
 
@@ -142,20 +143,33 @@ class Feeder(torch.utils.data.Dataset):
         # Compute the rotation matrices for each segment in the tree
         R_mod = tools.kinematic_tree_3d(masked_joint_coords, self.tree_edges)
 
-        # Computes the pose energy along each pair of nodes in the tree
+        #FIXME: Incorporate the global rotation
+        feat_rot = np.zeros((M * T, 1, V, 1)) if return_logmap else np.zeros((M * T, 1, V, 3, 3))
+        if mode == 'so3_chains':
+            # find out the path between the root node '0' and <n_idx> node, along with all the rotation
+            # matrices in the path
+            selected_joint_pairs = np.stack([np.zeros(V), np.arange(V)]).T
+            path_rot_masked = tools.get_pose_path(self.kinematic_tree, R_mod, edges=self.tree_edges, pairs=selected_joint_pairs)
 
-        # find out the path between the root node '0' and <n_idx> node, along with all the rotation
-        # matrices in the path
-        selected_joint_pairs = np.stack([np.zeros(V), np.arange(V)]).T
-
-        path_rot_masked = tools.get_pose_path(self.kinematic_tree, R_mod, edges=self.tree_edges, pairs=selected_joint_pairs)
+            if return_logmap:
+                # Computes the angle of rotation of each rotation matrix
+                feat_rot[mask] = np.arccos((np.trace(path_rot_masked, axis1=-2, axis2=-1) - 1) / 2)[..., None]
+            else:
+                feat_rot[mask] = path_rot_masked
+        elif mode == 'so3_single_rot':
+            if return_logmap:
+                feat_rot[mask, :][:, :, self.tree_edges[:, 1]] = np.arccos((np.trace(R_mod, axis1=-2, axis2=-1) - 1) / 2)[..., None]
+            else:
+                feat_rot[mask, :, 0] = np.tile(np.eye(3)[None, None, None, ...], reps=[mask.sum(), 1, 1, 1])
+                feat_rot[mask, :][:, :, self.tree_edges[:, 1]] = R_mod
 
         # Reshape the features
-        path_rot = np.zeros((M * T, 1, V, 3, 3))
-        path_rot[mask] = path_rot_masked
-        path_rot = path_rot.reshape(M, T, V, 3, 3).transpose(3, 4, 1, 2, 0)
+        if return_logmap:
+            feat_rot = feat_rot.reshape(M, T, V, 1).transpose(3, 1, 2, 0)
+        else:
+            feat_rot = feat_rot.reshape(M, T, V, 3, 3).transpose(3, 4, 1, 2, 0)
 
-        return path_rot
+        return feat_rot
 
     def __getitem__(self, index):
         # get data
@@ -174,12 +188,14 @@ class Feeder(torch.utils.data.Dataset):
         data_numpy = self._augment_example(data_numpy, index)
 
         # Computes the feature mode
-        if self.feat_mode == 'so3_chains':
-            data_numpy = self._compute_so3_chain(data_numpy)
+        if self.feat_mode in ['so3_chains', 'so3_single_rot']:
+            data_numpy = self._compute_so3_feat(data_numpy, mode=self.feat_mode)
             C1, C2, T, V, M = data_numpy.shape
 
             # Only the first two columns of the rotation matrix
             data_numpy = data_numpy[:, :2].reshape(-1, T, V, M)
+        elif self.feat_mode == 'so3_dist':
+            data_numpy = self._compute_so3_feat(data_numpy, mode='so3_chains', return_logmap=True)
         elif self.feat_mode == 'xyz':
             pass
         else:
